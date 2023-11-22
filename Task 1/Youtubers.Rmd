@@ -1,0 +1,392 @@
+---
+title: "YouTube's Top Streamers"
+author: "Aliyu Atiku Mustapha"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    collapsed: false
+    number_sections: false
+    toc_depth: 2
+    code_folding: hide
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+# Load the required packages for the analysis
+# Load tidyverse package for data manipulation and visualization
+library(tidyverse)
+# Load corrplot package for correlation plot
+library(corrplot)
+# Load DT package for table display
+library(DT)
+knitr::opts_chunk$set(fig.width = 10, fig.height = 6)
+```
+
+# Uncovering Insights from the Top 1000 YouTube Streamers' Dataset
+
+## Dataset Overview
+
+Dataset: Top 1000 Youtubers statistics.
+
+This dataset contains valuable information about the top YouTube streamers,including their ranking, categories, subscribers, country, visits, likes, comments, and more.Your task is to perform a comprehensive analysis of the dataset to extract insights about the top YouTube content creators.
+
+| Column Name | Column Description 
+|--------- |--------- 
+| Rank    |  Index 
+| Username    | Youtube Username
+| Categories    | Content Category
+| Suscribers    | Number of Subscribers to channel
+| Country    | Country of content creator
+| Visits    | Number of Visits to channel
+| Likes    | Number of Likes to channel
+| Comments    | Number of Comments in channel
+| Links    | Youtube link to channel
+
+### Data Loading and Exploration
+
+Load the data and take a look at its makeup.
+
+```{r, read_files, message=FALSE, warning=FALSE}
+# Read the red wine data
+youtubers <- read.csv("E:/My Data Science Portfolio/Online Internships/3. TASK-INTERN-CAREER/Task 1/youtubers_df.csv", 
+                      sep = ",")
+# Display the first 200 rows of imported data
+datatable(
+  youtubers,
+  options = list(pageLength = 25, scrollx = '10in', scrollY = '4in'),
+  caption = "The first 25 rows of loaded data.",
+  fillContainer = TRUE)
+# Number of total rows in data
+cat("The youtube dataset has",nrow(youtubers), "rows.")
+```
+
+### Data Properties
+
+To comprehend the data's structure, examining the class of each variable alongside the count and proportion of missing values, and checking for duplicate row entries. These all offer valuable insights, aiding in understanding its structure and potential utility for further analysis.
+
+```{r data_str, warning=FALSE, message=FALSE}
+# Replaces whitespace with NA in Categories column
+youtubers <- youtubers %>%
+    mutate(Categories = na_if(Categories, ""))
+# Check for class of each variable
+class_data <- sapply(youtubers, class)
+# Create a data frame named class_table
+data_table <- data.frame(
+# Create a column "Class" and assign class_table to it as a character
+  Class = as.character(class_data),
+# Create a column "Missing" as the sum of missing values
+  Missing = colSums(is.na(youtubers)),
+# Create a column "Prop_Missing" to calculate the proportion of missing values
+  Prop_Missing = round((colSums(is.na(youtubers)) / nrow(youtubers)) * 100, 2),
+# Character vectors within the data frame are not to be factors.
+  stringsAsFactors = FALSE)
+# Display the properties of the data
+datatable(
+  data_table,
+  options = list(pageLength = 10, scrollx = '10in', scrollY = '4in'),
+  caption = "Table displaying the properties of the data.",
+  fillContainer = TRUE)
+# Find duplicate rows
+duplicates <- youtubers[duplicated(youtubers),]
+# Print the number of duplicates found in the data
+cat("There are ", nrow(duplicates), "duplicate rows in the data.")
+```
+
+The data has some missing values, all variables are in the right format.
+
+30.6% of *"Categories"* are missing, all which have to be filled before analysis begins. 
+
+## Data Cleaning and Restructuring
+
+```{r data_cln, warning=FALSE, message=FALSE}
+# Create a column "Content_Type" from "Categories" which takes only the characters of Categories before the first whitespace
+youtubers$Content_Type = sub("\\s.*", "", youtubers$Categories)
+# Clean "Content_Type" of the trailing commas
+youtubers$Content_Type = gsub(",$", "", youtubers$Content_Type)
+# Some Categories are unknown or missing, so will be renamed as "Unknown"
+youtubers$Content_Type[is.na(youtubers$Content_Type)] <- "Unknown"
+# Rearrange the order of columns and rename "Suscribers" to "Subscribers", drop "Categories" because "Content_Type" replaces it
+youtubers <- youtubers %>% select(Rank, Username, Country, Content_Type, Subscribers = Suscribers, Visits, Likes, Comments, Links)
+# Display the restructured and clean of the data
+datatable(
+  youtubers,
+  options = list(pageLength = 25, scrollx = '10in', scrollY = '4in'),
+  caption = "Cleaned and restructured Youtubers data",
+  fillContainer = TRUE)
+```
+
+In this phase, the data was thoroughly cleaned to ensure its accuracy and completeness. To enhance the data's organization, it was restructured with the categorical and numerical columns were grouped together.
+
+Furthermore, a new super category column named *"Content_Type"* was created, this column was derived by extracting the first words of the "Categories" column. This simplifies the grouping process, making it more easier for analysis, without the complexities of managing sub-categories and the potential to distort the analysis.
+
+Lastly, any missing data points in the created column *"Content_Type"*, were reclassified as *"Unknown"* to maintain consistency and facilitate comprehensive data handling.
+
+### Assessing Data Spread and Outliers via Distribution Analysis
+
+```{r, outliers, message=FALSE, warning=FALSE}
+boxplot(youtubers[c("Subscribers", "Visits", "Likes", "Comments")], 
+        main = "Distribution of Numeric Columns")
+```
+
+* *Subscribers* exhibit a notably higher mean compared to other variables like *Visits*, *Likes*, and *Comments.*
+* *Visits* and *Subscribers* display numerous outliers, indicating extreme values beyond the typical range.
+* *Likes*, however, exhibit only a few outliers, suggesting comparatively fewer extreme values.
+
+## Trend Analysis: Unveiling Popular Content and Metrics
+
+### Exploring Dominant Content Categories and Audience Metrics
+
+The analysis consolidates the data based on content types, then aggregating key metrics such as the count of content creators, total subscribers, visits, likes, and comments for each category. Plot a chart that visualizes the distribution of content creators across various content types.
+
+```{r, trends, message=FALSE, warning=FALSE}
+# Group by Content_Type and count, then sum Subscribers, Visits, Likes and Comments
+trend_cat <- youtubers %>%
+  group_by(Content_Type) %>%
+  summarize(Count = n(),
+    Subscribers = sum(Subscribers),
+    Visits = sum(Visits),
+    Likes = sum(Likes),
+    Comments = sum(Comments)
+            )
+# A chart showing the Content_Type by Count
+ggplot(trend_cat, aes(
+  x = reorder(Content_Type, -Count),
+  y = Count,
+  fill = Content_Type)) + geom_col() +
+  geom_text(aes(label = paste0(Count)),
+              hjust = -0.25) +
+  labs(title = "Youtube content type by number of streamers", 
+       y = "Number of Streamers", x = "Content Type") +
+  theme(legend.position = "none", axis.text.x = element_blank()) + 
+  coord_flip()
+```
+
+The chart highlights a challenge with numerous *"Unknown"* categories, significantly comprising the highest count of content creators. This could potentially distort the accuracy of the count, affecting the integrity of the analysis and reliability. 
+
+Additionally, notable categories such as *Musica*, *Peliculas*, and *Animacion* emerge with the highest content creator counts in the data.
+
+### Correlation: Subscribers, Visits, Likes, and Comments Unraveled
+
+Investigate the interrelationships among numeric metrics—Subscribers, Visits, Likes, and Comments—to discern patterns or correlations between these metrics.
+
+```{r, corr, message=FALSE, warning=FALSE}
+# Correlation matrix
+corrplot(cor(youtubers[, c("Subscribers", "Visits", "Likes", "Comments")]), 
+         method = "color", addCoef.col = "black", tl.col = "red")
+```
+The correlation analysis reveals that *Visits* and *Likes* exhibit the highest correlation coefficient, signifying a robust linear relationship between them. In contrast, the relationships between other variables appear to be less pronounced or significant.
+
+
+## Audience Study: Regional Preferences and Country Analysis
+
+### Understanding Audience Demographics and Regional Trends
+
+Group the data base on countries, counting the content creators per country. Plot a chart that visualizes the distribution of content creators across the countries.
+
+```{r, audience, message=FALSE, warning=FALSE}
+aud <- youtubers %>% 
+        group_by(Country) %>%
+        summarize(Count = n())
+# Due to the absence of Country in some rows, lets create a new column "Highlight" to highlight rows with Unknown Countries
+aud$Highlight <- ifelse(aud$Country == "Unknown", "Highlighted", "Other")
+# Plot the a chart showing Country counts
+ggplot(aud, aes(x = Count, y = reorder(Country,-Count), fill = Highlight)) +
+  geom_col() +
+  geom_text(aes(label = paste0(Count)),
+            hjust = -0.25) +
+  labs(title = "Distribution of Content Creators Across Countries", 
+       x = "Count", y = "Country") +
+  theme(legend.position = "none", axis.text.x = element_blank())
+```
+
+*Estados Unidos* and *India* emerge with the highest count of content creators in the data. However, the substantial presence of missing values represented as *"Unknown"* for countries poses a risk of distorting the accuracy of the count, potentially compromising the integrity and reliability of the analysis
+
+### Audiences and Regional Content Preferences
+
+Group the data by country and content type, calculating the count of content creators in each country for each content type. A heatmap visualizing the relationship between content types and countries, showcasing how content creators are distributed across different content types in each country.
+
+```{r, region, message=FALSE, warning=FALSE}
+reg <- youtubers %>% 
+        group_by(Country, Content_Type) %>%
+        summarize(Count = n())
+# Plot the a chart showing Country counts relationship with Content_Type
+ggplot(reg, aes(x = Content_Type, y = reorder(Country, -Count), fill = Count)) +
+    geom_tile() +
+    geom_text(aes(label = paste0(Count)),
+              size = 2) +
+    scale_fill_gradient(low = "skyblue", high = "red", 
+                        na.value = "grey50") +
+    labs(title = "Content Type Distribution by Country", 
+         x = "Content Type", y = "Country") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+Most countries primarily feature individual content creators across various content types, with *Estados Unidos* being the exception by hosting creators in all but one content type. Additionally, countries like *India*, *Brazil*, *Mexico* and *Indonesia* have representation across several content types. In contrast, content types such as *Animación*, *Música*, *Noticias*, *Películas*, *Videojuegos*, and *Vlogs* showcase a diverse range of content creators spanning multiple countries.
+
+The preference for content production is evident, with *Música*, *Películas*, and *Animación* being the favored choices among content producers, in that specific order.
+
+Again, *"Unknown"* countries and categories poses a risk to the analysis.
+
+## Performance Metrics: Average and Exceptional Performers
+
+### Analyzing Average Metrics by Content Type
+
+Visualize the average of each metric (Subscribers, Likes, Visits, Comments) for each content type on YouTube.
+
+```{r, Perf_metrics, message=FALSE, warning=FALSE}
+# Lets calculate the average of our metrics by Content_type
+perf <- youtubers %>%
+    # Group by Content_Type
+    group_by(Content_Type) %>%
+  # Aggregate the metrics together
+    summarize(Subscribers = mean(Subscribers),
+              Likes = mean(Likes),
+              Visits = mean(Visits),
+              Comments = mean(Comments)) %>%
+    # Pivot the table to create a metric column and value columns for the metrics
+    pivot_longer(cols = c(Subscribers, Visits, Likes, Comments), 
+                 names_to = "Metric", 
+                 values_to = "Mean_Value")
+#Plot to see the Content Types with low metrics faceted by metric
+ggplot(perf, aes(y = Mean_Value, x = Content_Type, 
+                 fill = Content_Type == "Unknown")) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = "red", "FALSE" = "grey50")) +
+    facet_wrap(~Metric, scales = "free_y", shrink = TRUE) +
+    labs(title = "Average Metrics of YouTube Content Types", 
+         x = "Content_Type", y = "Average Number of Streamers") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "None")
+
+```
+
+*Note: Each chart is plotted on a distinct y-axis scale.*
+
+## Content Categories: Distribution and Impact
+
+### Identifying Impactful Content Categories
+
+To identify content types with low metrics, setting:
+
+* A minimum of 500,000 Subscribers and Visits, indicating a subscription for each visitor to the channel. 
+* A minimum of 100,000 Likes, signifying that one in every five visitors likes the content.
+* A minimum of 10,000 Comments, suggesting that one in every fifty visitors engages with a comment.
+
+These values are adjustable to suit specific analysis requirements.
+
+```{r, cont_cat, message=FALSE, warning=FALSE}
+# Set minimum numbers for each metric 
+min_S = 500000 # Minimum number of Subscribers
+min_V = 500000 # Minimum number of Visits
+min_L = 100000 # Minimum number of Likes
+min_C = 10000 # Minimum number of Comments
+# Lets create another column "Low_Metrics" to determine the "Content_Type" with low metrics
+cont_cat <- youtubers %>%
+    # Group by Content_Type
+    group_by(Content_Type) %>%
+  # Aggregate the metrics together
+    summarize(Subscribers = sum(Subscribers),
+              Likes = sum(Likes),
+              Visits = sum(Visits),
+              Comments = sum(Comments)) %>%
+  # Create a Column and mark it as Low Metrics if Subscribers & Visits are below 500 Million or Likes below 2.5 Million or Comments below 100 thousand, if not then mark as "Not Low" 
+    mutate(Low_Metrics = case_when(Subscribers < min_S ~ "Low Metrics",
+                                   Visits < min_V ~ "Low Metrics",
+                                   Likes < min_L ~ "Low Metrics",
+                                   Comments < min_C ~ "Low Metrics",
+                                   TRUE ~ "Not Low"
+    )) %>%
+  # Pivot the table to create a metric column and value columns for the metrics
+    pivot_longer(cols = c(Subscribers, Visits, Likes, Comments), 
+                 names_to = "Metric", 
+                 values_to = "Total_Value")
+#Plot to see the Content Types with low metrics faceted by metric
+ggplot(cont_cat, aes(y = Total_Value, x = Content_Type, fill = Low_Metrics)) +
+    geom_col() +
+    facet_wrap(~Metric, scales = "free_y") +
+    labs(title = "Impactful Content Types and Metrics Analysis", 
+         x = "Content_Type", y = "Numbers", fill = "Low Metrics") +
+    scale_fill_manual(values = c("purple", "grey50")) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          legend.position = "top")
+```
+
+*Note: Each chart is plotted on a distinct y-axis scale.*
+
+Many content categories demonstrate low metric performances, falling below the *set* minimum thresholds for each metric.
+
+## Brands and Collaborations
+
+###  Insights into Brand Collaborations and Marketing Campaigns
+
+The total absence of indicators showing brand alliances or collaborations within the data poses a challenge in analyzing the extent of brand engagement among content creators. It becomes difficult to ascertain which creators are receive any form of brand collaborations or marketing campaigns.
+
+```{r warning=FALSE, brands_col, message=FALSE, include=FALSE}
+# Search for "brand" or "collaboration" or "marketing" or campaign terms in 'Links' column to ascertain if there's any association 
+collaborations <- grep("brand|marketing|collaboration|campaign", youtubers$Links, ignore.case = TRUE, fixed = FALSE)
+
+# Subset Youtubers with collaborations to get those with a brand or collaboration or marketing or campaign
+collabs_camp <- youtubers[collaborations, ]
+# Display the data
+datatable(
+  collabs_camp,
+  options = list(pageLength = 12, scrollx = '10in', scrollY = '4in'),
+  caption = "Table showing Streamers with brand collaborations and alliances.",
+  fillContainer = TRUE)
+```
+
+## Benchmarking
+
+### Identifying High-Performing Content Creators
+
+Establishing minimum benchmarks for Subscribers, Visits, Likes, and Comments facilitates the identification of content creators surpassing these thresholds. We maintain our earlier benchmark settings of:
+
+* A minimum of 500,000 Subscribers and Visits, indicating a subscription for each visitor to the channel. 
+* A minimum of 100,000 Likes, signifying that one in every five visitors likes the content.
+* A minimum of 10,000 Comments, suggesting that one in every fifty visitors engages with a comment.
+
+These values are adjustable to suit specific analysis requirements.
+
+```{r, benchmark, message=FALSE, warning=FALSE}
+# Set minimum benchmarks 
+min_Subs = 500000 # Minimum number of Subscribers
+min_Vis = 500000 # Minimum number of Visits
+min_Likes = 100000 # Minimum number of Likes
+min_Comm = 10000 # Minimum number of Comments
+# Filter youtubers data to find matching streamers
+high_perf_streamers <- youtubers %>% 
+    filter(Subscribers >= min_Subs,
+           Visits >= min_Vis,
+           Likes >= min_Likes,
+           Comments >= min_Comm)
+# Display Streamers that match minimum set conditions
+DT::datatable(
+  high_perf_streamers,
+  options = list(pageLength = 26, scrollx = '10in', scrollY = '4in'),
+  caption = " Top 26 Content Creators.",
+  fillContainer = TRUE)
+```
+
+## Content Recommendations
+
+### Enhancing Content Recommendations for User Engagement
+
+
+1. Content Curation and Discovery: A curated playlists of featured content that showcase high-performing streamers from various categories. This facilitates user exposure to trending and new content creators.
+
+2. User Engagement Metrics: Integrating user engagement metrics (Subscribers, Visits, Likes and Comments) into the recommendation algorithm. This enhances content promotion aligned with high user engagement levels.
+
+3. Localized Recommendations: Customizing suggestions according to specific countries caters to localized tastes.
+
+Continuous monitoring and refinement of recommendation algorithms using methods like A/B testing are essential. These strategies add incentives to content creators by increasing their visibility in recommendations, potentially motivating them to produce more engaging and valuable content with higher metrics.
+
+Lastly, providing users with control over their recommendations by enabling customization based on their interests enhances user experience and satisfaction.
+
+## Conclusion
+
+1. The incompleteness of data in the country and categories fields presents a significant risk of distorting the analysis, especially when grouping by any of these fields. A more complete data will provide a more accurate distribution and counts of within these fields.
+
+2. A more simplified classification of categories to a more consolidated structure without sub-categories, this would significantly improve data organization and facilitate more efficient grouping and analysis.
+
+3. It is recommended that the data should incorporates metrics related to brand alliances and collaborations. This would significantly enhance the ability to conduct comprehensive analyses and evaluations of content creators' involvement in brand engagements and marketing initiatives.
